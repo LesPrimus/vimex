@@ -6,7 +6,7 @@ from httpx import Request
 import webbrowser
 
 
-from ._oauth2_server import Server
+from ._oauth2_server import Server, ServerFlow
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +73,7 @@ class VimeoOauth2AuthorizationCode(httpx.Auth):
     header_value = "Bearer {token}"
     token_field_name = "access_token"
     default_scope = "public private"
+    server_flow = ServerFlow.CODE
 
     def __init__(self, client_id, client_secret, state, scope=None):
         self.client_id = client_id
@@ -84,7 +85,7 @@ class VimeoOauth2AuthorizationCode(httpx.Auth):
     def auth_flow(
         self, request: httpx.Request
     ) -> Generator[httpx.Request, httpx.Response, None]:
-        grant = self.get_authorization_grant(grant_name="code")
+        grant = self.get_authorization_grant()
         # todo add cache..
         if grant and isinstance(grant, tuple) and len(grant) == 2:
             code, state = grant
@@ -105,8 +106,11 @@ class VimeoOauth2AuthorizationCode(httpx.Auth):
         )
         return r
 
-    def get_authorization_grant(self, grant_name):
-        with Server(grant_name=grant_name) as server:
+    def get_server(self):
+        return Server(flow=self.server_flow)
+
+    def get_authorization_grant(self):
+        with self.get_server() as server:
             self.open_link()
             while not server.event.is_set():
                 server.handle_request()
@@ -139,3 +143,31 @@ class VimeoOauth2AuthorizationCode(httpx.Auth):
     def open_link(self):
         link = self.format_token_url()
         webbrowser.open(link)
+
+
+# todo add tests.
+class VimeoOauth2ImplicitGrant(VimeoOauth2AuthorizationCode):
+    authorization_url = "https://api.vimeo.com/oauth/authorize?" \
+                        "response_type=token" \
+                        "&client_id={client_id}" \
+                        "&redirect_uri={redirect_uri}" \
+                        "&state={state}" \
+                        "&scope={scope}"
+    server_flow = ServerFlow.IMPLICIT
+
+    def __init__(self, client_id, client_secret, state, scope=None):
+        super().__init__(client_id, client_secret, state, scope)
+
+    def auth_flow(
+            self, request: Request
+    ) -> Generator[httpx.Request, httpx.Response, None]:
+        grant = self.get_authorization_grant()
+        # todo add cache..
+        if grant and isinstance(grant, tuple) and len(grant) == 2:
+            code, state = grant
+            request.headers[self.header_name] = self.header_value.format(token=code)
+            # todo check state.
+        yield request
+
+    def get_server(self):
+        return Server(flow=self.server_flow, redirect_on_fragment=True)
