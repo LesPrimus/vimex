@@ -9,7 +9,7 @@ API_ROOT = "https://some_website.com"
 
 
 class TestAuthorizationCodeAuth:
-    @mock.patch("vimex._auth.VimeoOauth2AuthorizationCode.get_authorization_code")
+    @mock.patch("vimex._auth.VimeoOauth2AuthorizationCode.get_authorization_grant")
     def test_auth_flow_with_grant_set_header(self, mocked_get_authorization_code):
         mocked_get_authorization_code.return_value = ("auth_code", "SomeVeryLongState")
 
@@ -33,7 +33,7 @@ class TestAuthorizationCodeAuth:
         request = flow.send(response)
         assert request.headers['Authorization'] == f"Bearer {json_response['access_token']}"
 
-    @mock.patch("vimex._auth.VimeoOauth2AuthorizationCode.get_authorization_code")
+    @mock.patch("vimex._auth.VimeoOauth2AuthorizationCode.get_authorization_grant")
     def test_auth_flow_without_grant(self, mocked_get_authorization_code):
         mocked_get_authorization_code.return_value = None
 
@@ -45,7 +45,7 @@ class TestAuthorizationCodeAuth:
         request = next(flow)
         assert "Authorization" not in request.headers
 
-    @mock.patch("vimex._auth.VimeoOauth2AuthorizationCode.get_authorization_code")
+    @mock.patch("vimex._auth.VimeoOauth2AuthorizationCode.get_authorization_grant")
     def test_auth_flow_with_401_response(self, mocked_get_authorization_code):
         mocked_get_authorization_code.return_value = ("auth_code", "SomeVeryLongState")
 

@@ -84,7 +84,7 @@ class VimeoOauth2AuthorizationCode(httpx.Auth):
     def auth_flow(
         self, request: httpx.Request
     ) -> Generator[httpx.Request, httpx.Response, None]:
-        grant = self.get_authorization_code()
+        grant = self.get_authorization_grant(grant_name="code")
         # todo add cache..
         if grant and isinstance(grant, tuple) and len(grant) == 2:
             code, state = grant
@@ -105,8 +105,8 @@ class VimeoOauth2AuthorizationCode(httpx.Auth):
         )
         return r
 
-    def get_authorization_code(self):
-        with Server() as server:
+    def get_authorization_grant(self, grant_name):
+        with Server(grant_name=grant_name) as server:
             self.open_link()
             while not server.event.is_set():
                 server.handle_request()
