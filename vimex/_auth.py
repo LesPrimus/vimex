@@ -60,24 +60,26 @@ class VimeoOAuth2ClientCredentials(httpx.Auth):
 
 class VimeoOauth2AuthorizationCode(httpx.Auth):
     requires_response_body = True
-    authorization_code_url = "https://api.vimeo.com/oauth/authorize?" \
+    authorization_url = "https://api.vimeo.com/oauth/authorize?" \
                 "response_type=code" \
                 "&client_id={client_id}" \
                 "&redirect_uri={redirect_uri}" \
-                "&state={state}"
+                "&state={state}" \
+                "&scope={scope}"
 
     exchange_url = "https://api.vimeo.com/oauth/access_token"
     server_address = "http://127.0.0.1:5555"
     header_name = "Authorization"
     header_value = "Bearer {token}"
     token_field_name = "access_token"
+    default_scope = "public private"
 
-    def __init__(self, client_id, client_secret, state, redirect_uri=None, client=None):
+    def __init__(self, client_id, client_secret, state, scope=None):
         self.client_id = client_id
         self.client_secret = client_secret
         self.state = state
-        self.redirect_uri = redirect_uri or self.server_address
-        self.client = client
+        self.redirect_uri = self.server_address
+        self.scope = " ".join(scope) if scope and isinstance(scope, list) else self.default_scope
 
     def auth_flow(
         self, request: httpx.Request
@@ -111,10 +113,11 @@ class VimeoOauth2AuthorizationCode(httpx.Auth):
         return server.grant
 
     def format_token_url(self) -> str:
-        return self.authorization_code_url.format(
+        return self.authorization_url.format(
             client_id=self.client_id,
             redirect_uri=self.redirect_uri,
-            state=self.state
+            state=self.state,
+            scope=self.scope,
         )
 
     def get_client_credentials_headers(self):
