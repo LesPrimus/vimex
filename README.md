@@ -38,6 +38,8 @@ with vimex.VimeoClient(auth=auth) as client:
 
 ```
 
+![alt text](https://github.com/LesPrimus/vimex/blob/master/img/canvas.png?raw=true)
+
 ### todo:
 
 - Add a cache for the tokens.
