@@ -6,13 +6,8 @@ from urllib.parse import urlparse, parse_qs
 
 from ._exceptions import AuthorizationCodeException, AuthorizationStateException
 
-HOST = "localhost"
-PORT = 5555
 
 logger = logging.getLogger(__name__)
-
-# TODO
-# refactor do_GET
 
 
 class ServerFlow(Enum):
@@ -82,9 +77,12 @@ class RequestHandler(BaseHTTPRequestHandler):
 
 
 class Server(HTTPServer):
-    def __init__(self, flow: ServerFlow, redirect_on_fragment=False):
+    default_host = "localhost"
+    default_port = 5555
+
+    def __init__(self, flow: ServerFlow, redirect_on_fragment=False, port=None):
         # todo make (host, port) configurable for the client.
-        super().__init__((HOST, PORT), RequestHandler)
+        super().__init__((self.default_host, port if port else self.default_port), RequestHandler)
         self.flow = flow
         self.redirect_on_fragment = redirect_on_fragment
         self.grant = None
