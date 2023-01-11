@@ -1,4 +1,6 @@
 import base64
+import sys
+import time
 from typing import Generator
 import logging
 import httpx
@@ -7,6 +9,7 @@ import webbrowser
 
 
 from ._oauth2_server import Server, ServerFlow
+from .data_structures import DeviceCodeGrantResponse
 
 logger = logging.getLogger(__name__)
 
@@ -171,3 +174,76 @@ class VimeoOauth2ImplicitGrant(VimeoOauth2AuthorizationCode):
 
     def get_server(self):
         return Server(flow=self.server_flow, redirect_on_fragment=True)
+
+
+class VimeoOauth2DeviceCodeGrant(httpx.Auth):
+    requires_response_body = True
+    exchange_url = "https://api.vimeo.com/oauth/device"
+    default_scope = "public private"
+    header_name = "Authorization"
+    header_value = "Bearer {token}"
+    token_field_name = "access_token"
+
+    def __init__(self, client_id, client_secret, state, scope=None):
+        self.client_id = client_id
+        self.client_secret = client_secret
+        self.state = state
+        self.scope = " ".join(scope) if scope and isinstance(scope, list) else self.default_scope
+
+    def auth_flow(
+            self, request: Request
+    ) -> Generator[httpx.Request, httpx.Response, None]:
+        response = yield self.build_user_code_request()
+        payload = DeviceCodeGrantResponse(**response.json())
+        self.print_instructions(payload.activate_link, payload.user_code)
+        response = self.poll_authorize_url(payload)
+        token = response.json().get(self.token_field_name, None)
+        # todo add check if token is not none..
+        request.headers[self.header_name] = self.header_value.format(token=token)
+        yield request
+
+    def build_user_code_request(self):
+        r = Request(
+            method="POST",
+            url=self.exchange_url,
+            headers=self.get_device_code_auth_headers(),
+            data=self.get_device_code_auth_body()
+        )
+        return r
+
+    def get_device_code_auth_headers(self):
+        encoded = _encode_client_credentials(self.client_id, self.client_secret)
+        headers = {
+            "Authorization": f"basic {encoded}",
+            "Accept": "application/vnd.vimeo.*+json;version=3.4",
+        }
+        return headers
+
+    def get_device_code_auth_body(self):
+        body = {
+            "grant_type": "device_grant",
+            "scope": self.scope
+        }
+        return body
+
+    def print_instructions(self, activate_link, code):
+        sys.stdout.write(f"> open the following link {activate_link}\n")
+        sys.stdout.write(f"> and insert this code: {code}\n")
+
+    def poll_authorize_url(self, payload: DeviceCodeGrantResponse):
+        client = httpx.Client()
+        timeout_sec = payload.expires_in
+        start = time.time()
+        request = Request(
+            method="POST",
+            url=payload.authorize_link,
+            headers=self.get_device_code_auth_headers(),
+            data={"user_code": payload.user_code, "device_code": payload.device_code}
+        )
+        while time.time() < start + timeout_sec:
+            sys.stdout.write(f"Polling {payload.authorize_link}..")
+            response = client.send(request)
+            if response.is_success:
+                return response
+            time.sleep(payload.interval)
+        raise TimeoutError(f"The polling to {payload.authorize_link} timeout..")
