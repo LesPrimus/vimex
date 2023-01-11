@@ -1,7 +1,7 @@
 import base64
 import sys
 import time
-from typing import Generator
+from typing import Generator, Optional
 import logging
 import httpx
 from httpx import Request
@@ -9,7 +9,7 @@ import webbrowser
 
 
 from ._oauth2_server import Server, ServerFlow
-from .data_structures import DeviceCodeGrantResponse
+from ._data_structures import DeviceCodeGrantResponse
 
 logger = logging.getLogger(__name__)
 
@@ -176,6 +176,7 @@ class VimeoOauth2ImplicitGrant(VimeoOauth2AuthorizationCode):
         return Server(flow=self.server_flow, redirect_on_fragment=True)
 
 
+# todo add tests
 class VimeoOauth2DeviceCodeGrant(httpx.Auth):
     requires_response_body = True
     exchange_url = "https://api.vimeo.com/oauth/device"
@@ -230,20 +231,24 @@ class VimeoOauth2DeviceCodeGrant(httpx.Auth):
         sys.stdout.write(f"> open the following link {activate_link}\n")
         sys.stdout.write(f"> and insert this code: {code}\n")
 
-    def poll_authorize_url(self, payload: DeviceCodeGrantResponse):
-        client = httpx.Client()
+    def poll_authorize_url(self, payload: DeviceCodeGrantResponse, client: Optional[httpx.Client] = None):
+        _client = client or httpx.Client()
         timeout_sec = payload.expires_in
-        start = time.time()
+        start = time.monotonic()
         request = Request(
             method="POST",
             url=payload.authorize_link,
             headers=self.get_device_code_auth_headers(),
             data={"user_code": payload.user_code, "device_code": payload.device_code}
         )
-        while time.time() < start + timeout_sec:
-            sys.stdout.write(f"Polling {payload.authorize_link}..")
-            response = client.send(request)
-            if response.is_success:
-                return response
-            time.sleep(payload.interval)
-        raise TimeoutError(f"The polling to {payload.authorize_link} timeout..")
+        try:
+            while time.monotonic() < start + timeout_sec:
+                sys.stdout.write(f"Polling {payload.authorize_link}..")
+                response = _client.send(request)
+                if response.is_success:
+                    return response
+                time.sleep(payload.interval)
+            raise TimeoutError(f"The polling to {payload.authorize_link} timeout..")
+        finally:
+            if client is None:
+                _client.close()
