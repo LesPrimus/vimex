@@ -76,5 +76,4 @@ class TestDeviceCodeAuth:
         response = httpx.Response(status_code=200, json=json_response)
 
         with pytest.raises(TimeoutError):
-            request = flow.send(response)
-            assert request.headers["Authorization"] == f"Bearer some_access_token"
+            flow.send(response)
