@@ -2,6 +2,7 @@ from unittest import mock
 import httpx
 
 import vimex
+from vimex._oauth2_server import MockedCallBackServer
 
 CLIENT_ID = "some_long_id"
 CLIENT_SECRET = "some_very_secret"
@@ -9,9 +10,14 @@ API_ROOT = "https://some_website.com"
 
 
 class TestAuthorizationCodeAuth:
-    @mock.patch("vimex._auth.VimeoOauth2AuthorizationCode.get_authorization_grant")
-    def test_auth_flow_with_grant_set_header(self, mocked_get_authorization_code):
-        auth = vimex.VimeoOauth2AuthorizationCode(CLIENT_ID, CLIENT_SECRET, state="long___state")
+    def test_auth_flow_with_grant_set_header(self):
+        auth = vimex.VimeoOauth2AuthorizationCode(
+            CLIENT_ID,
+            CLIENT_SECRET,
+            state="long___state",
+            server=MockedCallBackServer(code="some_code", state="long__state"),
+        )
+
         request = httpx.Request("GET", API_ROOT)
 
         flow = auth.sync_auth_flow(request)
@@ -31,11 +37,14 @@ class TestAuthorizationCodeAuth:
         request = flow.send(response)
         assert request.headers['Authorization'] == f"Bearer {json_response['access_token']}"
 
-    @mock.patch("vimex._auth.VimeoOauth2AuthorizationCode.get_authorization_grant")
-    def test_auth_flow_without_grant(self, mocked_get_authorization_code):
-        mocked_get_authorization_code.return_value = None
+    def test_auth_flow_without_grant(self):
+        auth = vimex.VimeoOauth2AuthorizationCode(
+            CLIENT_ID,
+            CLIENT_SECRET,
+            state="long___state",
+            server=MockedCallBackServer(code=None, state=None),
+        )
 
-        auth = vimex.VimeoOauth2AuthorizationCode(CLIENT_ID, CLIENT_SECRET, state="long___state")
         request = httpx.Request("GET", API_ROOT)
 
         flow = auth.sync_auth_flow(request)
@@ -43,11 +52,14 @@ class TestAuthorizationCodeAuth:
         request = next(flow)
         assert "Authorization" not in request.headers
 
-    @mock.patch("vimex._auth.VimeoOauth2AuthorizationCode.get_authorization_grant")
-    def test_auth_flow_with_401_response(self, mocked_get_authorization_code):
-        mocked_get_authorization_code.return_value = ("auth_code", "SomeVeryLongState")
+    def test_auth_flow_with_401_response(self):
 
-        auth = vimex.VimeoOauth2AuthorizationCode(CLIENT_ID, CLIENT_SECRET, state="long___state")
+        auth = vimex.VimeoOauth2AuthorizationCode(
+            CLIENT_ID,
+            CLIENT_SECRET,
+            state="long___state",
+            server=MockedCallBackServer(code="some_code", state="some_state"),
+        )
         request = httpx.Request("GET", API_ROOT)
 
         flow = auth.sync_auth_flow(request)

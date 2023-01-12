@@ -1,5 +1,6 @@
 import asyncio
 import threading
+import webbrowser
 from enum import Enum, auto
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import logging
@@ -106,11 +107,36 @@ class CallBackServer:
         self.server: Optional[uvicorn.Server] = uvicorn.Server(self.server_config)
 
         # Response from vimeo.
-        self._code = None
-        self._received_state = None
+        self.code = None
+        self.received_state = None
 
     def callback(self, request):
-        self._code = request.query_params["code"]
-        self._received_state = request.query_params["state"]
+        self.code = request.query_params["code"]
+        self.received_state = request.query_params["state"]
         self.event.set()
         return JSONResponse({"hello": "world"})
+
+    async def run_server(self):
+        await self.server.serve()
+
+    async def wait_for_grant(self):
+        asyncio.create_task(self.run_server())
+        await self.event.wait()
+        await self.server.shutdown()
+
+    def get_authorization_grant(self, link):
+        self.open_link(link)
+        asyncio.run(self.wait_for_grant())
+        return self.code, self.received_state
+
+    def open_link(self, link):
+        webbrowser.open(link)
+
+
+class MockedCallBackServer:
+    def __init__(self, code, state):
+        self.code = code
+        self.state = state
+
+    def get_authorization_grant(self, *args, **kwargs):
+        return self.code, self.state
