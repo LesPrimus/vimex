@@ -11,12 +11,10 @@ API_ROOT = "https://some_website.com"
 class TestAuthorizationCodeAuth:
     @mock.patch("vimex._auth.VimeoOauth2AuthorizationCode.get_authorization_grant")
     def test_auth_flow_with_grant_set_header(self, mocked_get_authorization_code):
-        mocked_get_authorization_code.return_value = ("auth_code", "SomeVeryLongState")
-
         auth = vimex.VimeoOauth2AuthorizationCode(CLIENT_ID, CLIENT_SECRET, state="long___state")
         request = httpx.Request("GET", API_ROOT)
 
-        flow = auth.auth_flow(request)
+        flow = auth.sync_auth_flow(request)
 
         request = next(flow)
 
@@ -40,7 +38,7 @@ class TestAuthorizationCodeAuth:
         auth = vimex.VimeoOauth2AuthorizationCode(CLIENT_ID, CLIENT_SECRET, state="long___state")
         request = httpx.Request("GET", API_ROOT)
 
-        flow = auth.auth_flow(request)
+        flow = auth.sync_auth_flow(request)
 
         request = next(flow)
         assert "Authorization" not in request.headers
@@ -52,7 +50,7 @@ class TestAuthorizationCodeAuth:
         auth = vimex.VimeoOauth2AuthorizationCode(CLIENT_ID, CLIENT_SECRET, state="long___state")
         request = httpx.Request("GET", API_ROOT)
 
-        flow = auth.auth_flow(request)
+        flow = auth.sync_auth_flow(request)
 
         request = next(flow)
         assert request.headers["Authorization"].startswith("basic")
@@ -60,3 +58,5 @@ class TestAuthorizationCodeAuth:
         response = httpx.Response(status_code=401)
         request = flow.send(response)
         assert 'Authorization' not in request.headers
+
+# todo add test for async_auth_flow.

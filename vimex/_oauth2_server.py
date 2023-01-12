@@ -1,8 +1,15 @@
+import asyncio
 import threading
 from enum import Enum, auto
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import logging
+from typing import Optional
 from urllib.parse import urlparse, parse_qs
+
+import uvicorn
+from starlette.applications import Starlette
+from starlette.responses import JSONResponse
+from starlette.routing import Route
 
 from ._exceptions import AuthorizationCodeException, AuthorizationStateException
 
@@ -88,3 +95,22 @@ class Server(HTTPServer):
         self.grant = None
         self.event = threading.Event()
         logger.debug(f"Listening on {self.server_address}..")
+
+
+class CallBackServer:
+    def __init__(self):
+        self.event = asyncio.Event()
+        self.routes = [Route("/", self.callback)]
+        self.app = Starlette(routes=self.routes)
+        self.server_config = uvicorn.Config(app=self.app, host="localhost", port=5555)
+        self.server: Optional[uvicorn.Server] = uvicorn.Server(self.server_config)
+
+        # Response from vimeo.
+        self._code = None
+        self._received_state = None
+
+    def callback(self, request):
+        self._code = request.query_params["code"]
+        self._received_state = request.query_params["state"]
+        self.event.set()
+        return JSONResponse({"hello": "world"})

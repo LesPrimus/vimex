@@ -1,12 +1,17 @@
+import asyncio
 import base64
 import sys
 import time
 from typing import Generator, Optional
 import logging
 import httpx
+import uvicorn
 from httpx import Request
 import webbrowser
 
+from starlette.applications import Starlette
+from starlette.responses import JSONResponse
+from starlette.routing import Route
 
 from ._oauth2_server import Server, ServerFlow
 from ._data_structures import DeviceCodeGrantResponse
@@ -85,19 +90,49 @@ class VimeoOauth2AuthorizationCode(httpx.Auth):
         self.redirect_uri = self.server_address
         self.scope = " ".join(scope) if scope and isinstance(scope, list) else self.default_scope
 
-    def auth_flow(
+        # Internal Server Config
+        self.event = asyncio.Event()
+        self.routes = [Route("/", self.callback)]
+        self.app = Starlette(routes=self.routes)
+        self.server_config = uvicorn.Config(app=self.app, host="localhost", port=5555)
+        self.server: Optional[uvicorn.Server] = uvicorn.Server(self.server_config)
+
+        # Response from vimeo.
+        self._code = None
+        self._received_state = None
+
+    @property
+    def code(self):
+        return self._code
+
+    @code.setter
+    def code(self, value):
+        self._code = value
+
+    @property
+    def received_state(self):
+        return self._received_state
+
+    @received_state.setter
+    def received_state(self, value):
+        if self.state and self.state != value:
+            raise ValueError("State mismatch")
+        self._received_state = value
+
+    def sync_auth_flow(
         self, request: httpx.Request
     ) -> Generator[httpx.Request, httpx.Response, None]:
-        grant = self.get_authorization_grant()
+        self.get_authorization_grant()
         # todo add cache..
-        if grant and isinstance(grant, tuple) and len(grant) == 2:
-            code, state = grant
+        if self._code:
             # todo check state.
-            response = yield self.build_access_token_request(code)
+            response = yield self.build_access_token_request(self._code)
             if response.is_success:
+                response.read()  # todo investigate
                 token = response.json().get(self.token_field_name, None)
-                # todo add check if token is not none..
-                request.headers[self.header_name] = self.header_value.format(token=token)
+                request.headers[self.header_name] = self.header_value.format(
+                    token=token
+                )
         yield request
 
     def build_access_token_request(self, code):
@@ -109,15 +144,23 @@ class VimeoOauth2AuthorizationCode(httpx.Auth):
         )
         return r
 
-    def get_server(self):
-        return Server(flow=self.server_flow)
+    def callback(self, request):
+        self.code = request.query_params["code"]
+        self.received_state = request.query_params["state"]
+        self.event.set()
+        return JSONResponse({"hello": "world"})
+
+    async def run_server(self):
+        await self.server.serve()
+
+    async def wait_for_grant(self):
+        asyncio.create_task(self.run_server())
+        await self.event.wait()
+        await self.server.shutdown()
 
     def get_authorization_grant(self):
-        with self.get_server() as server:
-            self.open_link()
-            while not server.event.is_set():
-                server.handle_request()
-        return server.grant
+        self.open_link()
+        asyncio.run(self.wait_for_grant())
 
     def format_token_url(self) -> str:
         return self.authorization_url.format(
