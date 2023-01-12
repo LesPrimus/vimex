@@ -2,18 +2,19 @@ import asyncio
 import base64
 import sys
 import time
+import typing
 from typing import Generator, Optional
 import logging
 import httpx
 import uvicorn
-from httpx import Request
+from httpx import Request, Response
 import webbrowser
 
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
-from ._oauth2_server import Server, ServerFlow, CallBackServer
+from ._oauth2_server import Server, ServerFlow
 from ._data_structures import DeviceCodeGrantResponse
 
 logger = logging.getLogger(__name__)
@@ -68,6 +69,7 @@ class VimeoOAuth2ClientCredentials(httpx.Auth):
 
 class VimeoOauth2AuthorizationCode(httpx.Auth):
     requires_response_body = True
+    requires_request_body = True
     authorization_url = "https://api.vimeo.com/oauth/authorize?" \
                 "response_type=code" \
                 "&client_id={client_id}" \
@@ -89,18 +91,35 @@ class VimeoOauth2AuthorizationCode(httpx.Auth):
         self.redirect_uri = self.server_address
         self.scope = " ".join(scope) if scope and isinstance(scope, list) else self.default_scope
 
-        self.server = server or CallBackServer()
+        self.server = server or Server(redirect_on_fragment=False)
 
     def sync_auth_flow(
         self, request: httpx.Request
     ) -> Generator[httpx.Request, httpx.Response, None]:
-        code, state = self.get_authorization_grant()
+        result = self.server.get_authorization_grant(self.format_token_url())
+        # self.check_state()
         # todo add cache..
-        if code:
-            # todo check state.
+        if code := result.code:
             response = yield self.build_access_token_request(code)
             if response.is_success:
                 response.read()  # todo investigate
+                token = response.json().get(self.token_field_name, None)
+                request.headers[self.header_name] = self.header_value.format(
+                    token=token
+                )
+        yield request
+
+    async def async_auth_flow(
+        self, request: Request
+    ) -> typing.AsyncGenerator[Request, Response]:
+        result = await self.server.async_get_authorization_grant(
+            self.format_token_url()
+        )
+        # self.check_state()
+        if code := result.code:
+            response = yield self.build_access_token_request(code)
+            if response.is_success:
+                await response.aread()
                 token = response.json().get(self.token_field_name, None)
                 request.headers[self.header_name] = self.header_value.format(
                     token=token
@@ -116,8 +135,12 @@ class VimeoOauth2AuthorizationCode(httpx.Auth):
         )
         return r
 
+    # todo obsolete..
     def get_authorization_grant(self):
         return self.server.get_authorization_grant(self.format_token_url())
+
+    async def async_get_authorization_grant(self):
+        return await self.server.async_get_authorization_grant(self.format_token_url())
 
     def format_token_url(self) -> str:
         return self.authorization_url.format(
@@ -143,36 +166,65 @@ class VimeoOauth2AuthorizationCode(httpx.Auth):
         }
         return body
 
+    def check_state(self):
+        if self.state != self.server.received_state:
+            raise ValueError("State Mismatch")
 
-# todo add tests.
-class VimeoOauth2ImplicitGrant(VimeoOauth2AuthorizationCode):
+
+class VimeoOauth2ImplicitGrant(httpx.Auth):
     authorization_url = "https://api.vimeo.com/oauth/authorize?" \
                         "response_type=token" \
                         "&client_id={client_id}" \
                         "&redirect_uri={redirect_uri}" \
                         "&state={state}" \
                         "&scope={scope}"
-    server_flow = ServerFlow.IMPLICIT
+    server_address = "http://127.0.0.1:5555"
+    header_name = "Authorization"
+    header_value = "Bearer {token}"
+    default_scope = "public private"
 
-    def __init__(self, client_id, client_secret, state, scope=None):
-        super().__init__(client_id, client_secret, state, scope)
+    def __init__(self, client_id, client_secret, state, scope=None, server=None):
+        self.client_id = client_id
+        self.client_secret = client_secret
+        self.state = state
+        self.redirect_uri = self.server_address
+        self.scope = (
+            " ".join(scope) if scope and isinstance(scope, list) else self.default_scope
+        )
 
-    def auth_flow(
+        self.server = server or Server(redirect_on_fragment=True)
+
+    def sync_auth_flow(
             self, request: Request
     ) -> Generator[httpx.Request, httpx.Response, None]:
-        grant = self.get_authorization_grant()
-        # todo add cache..
-        if grant and isinstance(grant, tuple) and len(grant) == 2:
-            code, state = grant
-            request.headers[self.header_name] = self.header_value.format(token=code)
-            # todo check state.
+        result = self.server.get_authorization_grant(self.format_token_url())
+        if access_token := result.access_token:
+            request.headers[self.header_name] = self.header_value.format(
+                token=access_token
+            )
         yield request
 
-    def get_server(self):
-        return Server(flow=self.server_flow, redirect_on_fragment=True)
+    async def async_auth_flow(
+        self, request: Request
+    ) -> typing.AsyncGenerator[Request, Response]:
+        result = await self.server.async_get_authorization_grant(
+            self.format_token_url()
+        )
+        if access_token := result.access_token:
+            request.headers[self.header_name] = self.header_value.format(
+                token=access_token
+            )
+        yield request
+
+    def format_token_url(self) -> str:
+        return self.authorization_url.format(
+            client_id=self.client_id,
+            redirect_uri=self.redirect_uri,
+            state=self.state,
+            scope=self.scope,
+        )
 
 
-# todo add tests
 class VimeoOauth2DeviceCodeGrant(httpx.Auth):
     requires_response_body = True
     exchange_url = "https://api.vimeo.com/oauth/device"
@@ -180,23 +232,56 @@ class VimeoOauth2DeviceCodeGrant(httpx.Auth):
     header_name = "Authorization"
     header_value = "Bearer {token}"
     token_field_name = "access_token"
+    server_address = "http://127.0.0.1:5555"
 
-    def __init__(self, client_id, client_secret, state, scope=None):
+    def __init__(self, client_id, client_secret, state, scope=None, server=None):
         self.client_id = client_id
         self.client_secret = client_secret
         self.state = state
-        self.scope = " ".join(scope) if scope and isinstance(scope, list) else self.default_scope
+        self.redirect_uri = self.server_address
+        self.scope = (
+            " ".join(scope) if scope and isinstance(scope, list) else self.default_scope
+        )
 
-    def auth_flow(
+        self.server = server or Server()
+
+    def sync_auth_flow(
             self, request: Request
     ) -> Generator[httpx.Request, httpx.Response, None]:
         response = yield self.build_user_code_request()
+        response.read()
         payload = DeviceCodeGrantResponse(**response.json())
         self.print_instructions(payload.activate_link, payload.user_code)
-        response = self.poll_authorize_url(payload)
+        response = self.server.poll_authorize_url(
+            url=payload.authorize_link,
+            expires_in=payload.expires_in,
+            interval=payload.interval,
+            headers=self.get_device_code_auth_headers(),
+            data={"user_code": payload.user_code, "device_code": payload.device_code},
+        )
         token = response.json().get(self.token_field_name, None)
-        # todo add check if token is not none..
-        request.headers[self.header_name] = self.header_value.format(token=token)
+        if token:
+            request.headers[self.header_name] = self.header_value.format(token=token)
+        yield request
+
+    async def async_auth_flow(
+        self, request: Request
+    ) -> typing.AsyncGenerator[Request, Response]:
+        response = yield self.build_user_code_request()
+        await response.aread()
+        payload = DeviceCodeGrantResponse(**response.json())
+        self.print_instructions(payload.activate_link, payload.user_code)
+
+        response = await self.server.async_poll_authorize_url(
+            url=payload.authorize_link,
+            expires_in=payload.expires_in,
+            interval=payload.interval,
+            headers=self.get_device_code_auth_headers(),
+            data={"user_code": payload.user_code, "device_code": payload.device_code},
+        )
+        token = response.json().get(self.token_field_name, None)
+        if token:
+            request.headers[self.header_name] = self.header_value.format(token=token)
         yield request
 
     def build_user_code_request(self):
@@ -226,25 +311,3 @@ class VimeoOauth2DeviceCodeGrant(httpx.Auth):
     def print_instructions(self, activate_link, code):
         sys.stdout.write(f"> open the following link {activate_link}\n")
         sys.stdout.write(f"> and insert this code: {code}\n")
-
-    def poll_authorize_url(self, payload: DeviceCodeGrantResponse, client: Optional[httpx.Client] = None):
-        _client = client or httpx.Client()
-        timeout_sec = payload.expires_in
-        start = time.monotonic()
-        request = Request(
-            method="POST",
-            url=payload.authorize_link,
-            headers=self.get_device_code_auth_headers(),
-            data={"user_code": payload.user_code, "device_code": payload.device_code}
-        )
-        try:
-            while time.monotonic() < start + timeout_sec:
-                sys.stdout.write(f"Polling {payload.authorize_link}..")
-                response = _client.send(request)
-                if response.is_success:
-                    return response
-                time.sleep(payload.interval)
-            raise TimeoutError(f"The polling to {payload.authorize_link} timeout..")
-        finally:
-            if client is None:
-                _client.close()
