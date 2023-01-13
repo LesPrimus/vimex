@@ -19,14 +19,14 @@ logger = logging.getLogger(__name__)
 
 
 class Server:
-    def __init__(self, host: str, port: int, redirect_on_fragment=False):
+    def __init__(self, port: int, redirect_on_fragment=False):
         self._redirect_on_fragment = redirect_on_fragment
         self._routes = [
             Route("/", self.callback),
         ]
 
         self._app = Starlette(routes=self._routes)
-        self._config = uvicorn.Config(app=self._app, host=host, port=port)
+        self._config = uvicorn.Config(app=self._app, port=port)
         self._server = uvicorn.Server(self._config)
 
         # Response from vimeo.
@@ -49,6 +49,14 @@ class Server:
         self.result.access_token = request.query_params.get("access_token")
         self.stop()
         return JSONResponse({"details": "Success"})
+
+    @property
+    def host(self):
+        return self._server.config.host
+
+    @property
+    def port(self):
+        return self._server.config.port
 
     def run(self):
         self._server.run()

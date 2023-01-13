@@ -70,7 +70,15 @@ class BaseOauth2Auth(httpx.Auth):
 
     @property
     def redirect_uri(self):
-        return f"{self.server_host}:{self.server_port}"
+        return f"http://{self.server.host}:{self.server.port}"
+
+    @property
+    def server(self):
+        return self._server
+
+    @server.setter
+    def server(self, server):
+        self._server = server
 
 
 class VimeoOAuth2ClientCredentials(BaseOauth2Auth):
@@ -124,20 +132,13 @@ class VimeoOauth2AuthorizationCode(BaseOauth2Auth):
     )
 
     exchange_url = "https://api.vimeo.com/oauth/access_token"
+    grant_type = GrantType.AUTHORIZATION_CODE
 
     def __init__(self, client_id, client_secret, state, scope=None):
         super().__init__(client_id, client_secret, state, scope)
         self._server = Server(
-            host=self.server_host, port=self.server_port, redirect_on_fragment=False
+            port=self.server_port,
         )
-
-    @property
-    def server(self):
-        return self._server
-
-    @server.setter
-    def server(self, server):
-        self._server = server
 
     def sync_auth_flow(
         self, request: httpx.Request
@@ -203,12 +204,11 @@ class VimeoOauth2ImplicitGrant(BaseOauth2Auth):
                         "&redirect_uri={redirect_uri}" \
                         "&state={state}" \
                         "&scope={scope}"
+    grant_type = GrantType.IMPLICIT
 
     def __init__(self, client_id, client_secret, state, scope=None):
         super().__init__(client_id, client_secret, state, scope)
-        self._server = Server(
-            host=self.server_host, port=self.server_port, redirect_on_fragment=True
-        )
+        self._server = Server(port=self.server_port, redirect_on_fragment=True)
 
     def sync_auth_flow(
             self, request: Request
@@ -244,10 +244,11 @@ class VimeoOauth2ImplicitGrant(BaseOauth2Auth):
 class VimeoOauth2DeviceCodeGrant(BaseOauth2Auth):
     requires_response_body = True
     access_token_url = "https://api.vimeo.com/oauth/device"
+    grant_type = GrantType.DEVICE
 
     def __init__(self, client_id, client_secret, state, scope=None):
         super().__init__(client_id, client_secret, state, scope)
-        self._server = Server(host=self.server_host, port=self.server_port)
+        self._server = Server(port=self.server_port)
 
     def sync_auth_flow(
             self, request: Request
