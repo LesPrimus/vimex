@@ -19,15 +19,15 @@ logger = logging.getLogger(__name__)
 
 
 class Server:
-    def __init__(self, redirect_on_fragment=False):
+    def __init__(self, host: str, port: int, redirect_on_fragment=False):
         self._redirect_on_fragment = redirect_on_fragment
         self._routes = [
             Route("/", self.callback),
         ]
 
         self._app = Starlette(routes=self._routes)
-        self._config = uvicorn.Config(app=self._app, host="localhost", port=5555)
-        self._server: Optional[uvicorn.Server] = uvicorn.Server(self._config)
+        self._config = uvicorn.Config(app=self._app, host=host, port=port)
+        self._server = uvicorn.Server(self._config)
 
         # Response from vimeo.
         self.result = ServerFlowResult()
@@ -86,7 +86,7 @@ class Server:
         timeout_sec = expires_in
         start = time.monotonic()
 
-        async with httpx.Client() as client:
+        with httpx.Client() as client:
             while time.monotonic() < start + timeout_sec:
                 sys.stdout.write(f"Polling {url}..")
                 response = client.post(url, headers=headers, data=data)
