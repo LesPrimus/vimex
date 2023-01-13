@@ -144,6 +144,7 @@ class VimeoOauth2AuthorizationCode(BaseOauth2Auth):
         self, request: httpx.Request
     ) -> Generator[httpx.Request, httpx.Response, None]:
         result = self._server.get_authorization_grant(self.format_authorization_url())
+        print(result, "///////")
         # self.check_state()
         # todo add cache..
         if code := result.code:

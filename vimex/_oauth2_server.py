@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 class Server:
-    def __init__(self, port: int, redirect_on_fragment=False):
+    def __init__(self, port: Optional[int] = 5555, redirect_on_fragment=False):
         self._redirect_on_fragment = redirect_on_fragment
         self._routes = [
             Route("/", self.callback),
@@ -125,9 +125,17 @@ class Server:
 
 
 class MockedCallBackServer:
-    def __init__(self, code, state):
-        self.code = code
-        self.state = state
+    def __init__(self, port=5555, redirect_on_fragment=False):
+        self.port = port
+        self.redirect_on_fragment = redirect_on_fragment
+        self.result = ServerFlowResult()
 
     def get_authorization_grant(self, *args, **kwargs):
-        return self.code, self.state
+        return self.result
+
+    async def async_get_authorization_grant(self, link) -> ServerFlowResult:
+        return self.result
+
+    @property
+    def host(self):
+        return "some_host"
