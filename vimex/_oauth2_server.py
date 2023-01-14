@@ -90,7 +90,7 @@ class Server:
         interval: int,
         headers=None,
         data=None,
-    ):
+    ) -> httpx.Response:
         timeout_sec = expires_in
         start = time.monotonic()
 
@@ -125,7 +125,7 @@ class Server:
 
 
 class MockedCallBackServer:
-    def __init__(self, port=5555, redirect_on_fragment=False):
+    def __init__(self, port=5555, redirect_on_fragment=False, **kwargs):
         self.port = port
         self.redirect_on_fragment = redirect_on_fragment
         self.result = ServerFlowResult()
@@ -135,6 +135,9 @@ class MockedCallBackServer:
 
     async def async_get_authorization_grant(self, link) -> ServerFlowResult:
         return self.result
+
+    def poll_authorize_url(self, *args, **kwargs) -> httpx.Response:
+        return httpx.Response(200)
 
     @property
     def host(self):
