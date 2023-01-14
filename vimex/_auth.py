@@ -280,20 +280,27 @@ class VimeoOauth2DeviceCodeGrant(BaseOauth2Auth):
         self, request: Request
     ) -> typing.AsyncGenerator[Request, Response]:
         response = yield self.build_access_token_request()
-        await response.aread()
-        payload = DeviceCodeGrantResponse(**response.json())
-        self.print_instructions(payload.activate_link, payload.user_code)
+        if response.is_success:
+            await response.aread()
+            payload = DeviceCodeGrantResponse(**response.json())
+            self.print_instructions(payload.activate_link, payload.user_code)
 
-        response = await self._server.async_poll_authorize_url(
-            url=payload.authorize_link,
-            expires_in=payload.expires_in,
-            interval=payload.interval,
-            headers=self.get_authorization_headers(),
-            data={"user_code": payload.user_code, "device_code": payload.device_code},
-        )
-        token = response.json().get(self.token_field_name, None)
-        if token:
-            request.headers[self.header_name] = self.header_value.format(token=token)
+            response = await self._server.async_poll_authorize_url(
+                url=payload.authorize_link,
+                expires_in=payload.expires_in,
+                interval=payload.interval,
+                headers=self.get_authorization_headers(),
+                data={
+                    "user_code": payload.user_code,
+                    "device_code": payload.device_code,
+                },
+            )
+            if response.is_success:
+                token = response.json().get(self.token_field_name, None)
+                if token:
+                    request.headers[self.header_name] = self.header_value.format(
+                        token=token
+                    )
         yield request
 
     def build_access_token_request(self, *args, **kwargs):

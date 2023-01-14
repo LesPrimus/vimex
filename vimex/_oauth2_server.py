@@ -139,6 +139,9 @@ class MockedCallBackServer:
     def poll_authorize_url(self, *args, **kwargs) -> httpx.Response:
         return httpx.Response(200)
 
+    async def async_poll_authorize_url(self, *args, **kwargs) -> httpx.Response:
+        return httpx.Response(200)
+
     @property
     def host(self):
         return "some_host"

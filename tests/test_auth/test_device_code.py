@@ -1,6 +1,7 @@
 from unittest import mock
 
 import httpx
+import pytest
 
 import vimex
 from vimex._oauth2_server import MockedCallBackServer
@@ -92,4 +93,89 @@ class TestDeviceCodeAuth:
         ) as mocked_method:
             mocked_method.return_value = httpx.Response(400, json={})
             request = flow.send(response)
+            assert "Authorization" not in request.headers
+
+
+@pytest.mark.anyio
+class TestAsyncDeviceCodeAuth:
+    async def test_device_flow_with_200(self):
+        auth = vimex.VimeoOauth2DeviceCodeGrant(CLIENT_ID, CLIENT_SECRET, STATE)
+        mocked_server = MockedCallBackServer()
+        auth.server = mocked_server
+
+        request = httpx.Request("GET", API_ROOT)
+
+        flow = auth.async_auth_flow(request)
+
+        request = await anext(flow)
+
+        assert request.headers["Authorization"].startswith("basic")
+
+        json_response = vimex.DeviceCodeGrantResponse(
+            device_code="some_device_code",
+            user_code="some_user_code",
+            authorize_link="https://some-authorize-link",
+            activate_link="https://some-activate-link",
+            expires_in=600,
+            interval=10,
+        )._asdict()
+
+        response = httpx.Response(status_code=200, json=json_response)
+
+        with mock.patch(
+            "vimex._oauth2_server.MockedCallBackServer.async_poll_authorize_url"
+        ) as mocked_method:
+            mocked_method.return_value = httpx.Response(
+                200, json={"access_token": "some_access_token"}
+            )
+            request = await flow.asend(response)
+            assert request.headers["Authorization"] == f"Bearer some_access_token"
+
+    async def test_device_flow_with_400(self):
+        auth = vimex.VimeoOauth2DeviceCodeGrant(CLIENT_ID, CLIENT_SECRET, STATE)
+        mocked_server = MockedCallBackServer()
+        auth.server = mocked_server
+
+        request = httpx.Request("GET", API_ROOT)
+
+        flow = auth.async_auth_flow(request)
+
+        request = await anext(flow)
+
+        assert request.headers["Authorization"].startswith("basic")
+
+        response = httpx.Response(status_code=400, json={})
+
+        request = await flow.asend(response)
+        assert "Authorization" not in request.headers
+
+    async def test_device_flow_with_400_from_polling_url(self):
+        auth = vimex.VimeoOauth2DeviceCodeGrant(CLIENT_ID, CLIENT_SECRET, STATE)
+        mocked_server = MockedCallBackServer()
+        auth.server = mocked_server
+
+        request = httpx.Request("GET", API_ROOT)
+
+        flow = auth.async_auth_flow(request)
+
+        request = await anext(flow)
+
+        assert request.headers["Authorization"].startswith("basic")
+
+        json_response = vimex.DeviceCodeGrantResponse(
+            device_code="some_device_code",
+            user_code="some_user_code",
+            authorize_link="https://some-authorize-link",
+            activate_link="https://some-activate-link",
+            expires_in=600,
+            interval=10,
+        )._asdict()
+
+        response = httpx.Response(status_code=200, json=json_response)
+
+        with mock.patch(
+            "vimex._oauth2_server.MockedCallBackServer.async_poll_authorize_url"
+        ) as mocked_method:
+            mocked_method.return_value = httpx.Response(400, json={})
+            request = await flow.asend(response)
             assert "Authorization" not in request.headers
