@@ -41,6 +41,20 @@ class TestClientCredentialsAuth:
         request = flow.send(response)
         assert "Authorization" not in request.headers
 
+    def test_client_credentials_flow_with_cached_access_token(self):
+        auth = vimex.VimeoOAuth2ClientCredentials(
+            client_id=CLIENT_ID,
+            client_secret=CLIENT_SECRET,
+            state=STATE,
+            access_token="some_cached_acccess_token",
+        )
+        request = httpx.Request("GET", API_ROOT)
+        flow = auth.sync_auth_flow(request)
+        request = next(flow)
+        assert request.headers["Authorization"] == auth.header_value.format(
+            token=auth.access_token
+        )
+
 
 @pytest.mark.anyio
 class TestAsyncClientCredentialsAuth:
@@ -74,3 +88,17 @@ class TestAsyncClientCredentialsAuth:
         response = httpx.Response(status_code=400)
         request = await flow.asend(response)
         assert "Authorization" not in request.headers
+
+    async def test_client_credentials_flow_with_cached_access_token(self):
+        auth = vimex.VimeoOAuth2ClientCredentials(
+            client_id=CLIENT_ID,
+            client_secret=CLIENT_SECRET,
+            state=STATE,
+            access_token="1234:abcd",
+        )
+        request = httpx.Request("GET", API_ROOT)
+        flow = auth.async_auth_flow(request)
+        request = await anext(flow)
+        assert request.headers["Authorization"] == auth.header_value.format(
+            token=auth.access_token
+        )

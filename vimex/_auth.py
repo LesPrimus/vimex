@@ -33,11 +33,13 @@ class BaseOauth2Auth(httpx.Auth):
         client_id: str,
         client_secret: str,
         state: str,
+        access_token: typing.Optional[str] = None,
         scope: typing.Optional[list[str]] = None,
     ):
         self.client_id = client_id
         self.client_secret = client_secret
         self.state = state
+        self.access_token = access_token
         self.scope = (
             " ".join(scope) if scope and isinstance(scope, list) else self.default_scope
         )
@@ -80,6 +82,10 @@ class BaseOauth2Auth(httpx.Auth):
     def server(self, server):
         self._server = server
 
+    def set_authorization_header(self, request, access_token):
+        request.headers[self.header_name] = self.header_value.format(token=access_token)
+        return request
+
 
 class VimeoOAuth2ClientCredentials(BaseOauth2Auth):
     access_token_url = "https://api.vimeo.com/oauth/authorize/client"
@@ -89,34 +95,40 @@ class VimeoOAuth2ClientCredentials(BaseOauth2Auth):
     def sync_auth_flow(
         self, request: httpx.Request
     ) -> Generator[httpx.Request, httpx.Response, None]:
-        # todo add cache..
-        response = yield self.build_access_token_request(
-            method="POST",
-            url=self.access_token_url,
-            headers=self.get_authorization_headers(),
-            body=self.get_authorization_body(),
-        )
-        if response.is_success:
-            response.read()
-            token = response.json().get(self.token_field_name, None)
-            request.headers[self.header_name] = self.header_value.format(token=token)
-        yield request
+        if self.access_token is not None:
+            yield self.set_authorization_header(request, self.access_token)
+        else:
+            response = yield self.build_access_token_request()
+            if response.is_success:
+                response.read()
+                token = response.json().get(self.token_field_name, None)
+                self.access_token = token
+                request = self.set_authorization_header(request, token)
+            yield request
 
     async def async_auth_flow(
         self, request: Request
     ) -> typing.AsyncGenerator[Request, Response]:
-        # todo add cache..
-        response = yield self.build_access_token_request(
+        if self.access_token is not None:
+            yield self.set_authorization_header(request, self.access_token)
+        else:
+            response = yield self.build_access_token_request()
+            if response.is_success:
+                await response.aread()
+                token = response.json().get(self.token_field_name, None)
+                self.access_token = token
+                request.headers[self.header_name] = self.header_value.format(
+                    token=token
+                )
+            yield request
+
+    def build_access_token_request(self, *args, **kwargs):
+        return super().build_access_token_request(
             method="POST",
             url=self.access_token_url,
             headers=self.get_authorization_headers(),
             body=self.get_authorization_body(),
         )
-        if response.is_success:
-            await response.aread()
-            token = response.json().get(self.token_field_name, None)
-            request.headers[self.header_name] = self.header_value.format(token=token)
-        yield request
 
 
 class VimeoOauth2AuthorizationCode(BaseOauth2Auth):
