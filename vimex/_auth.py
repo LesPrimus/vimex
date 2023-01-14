@@ -150,7 +150,8 @@ class VimeoOauth2AuthorizationCode(BaseOauth2Auth):
             response = yield self.build_access_token_request(code)
             if response.is_success:
                 response.read()  # todo investigate
-                token = response.json().get(self.token_field_name, None)
+                data = response.json()
+                token = data[self.token_field_name]
                 request.headers[self.header_name] = self.header_value.format(
                     token=token
                 )
@@ -167,7 +168,8 @@ class VimeoOauth2AuthorizationCode(BaseOauth2Auth):
             response = yield self.build_access_token_request(code)
             if response.is_success:
                 await response.aread()
-                token = response.json().get(self.token_field_name, None)
+                data = response.json()
+                token = data[self.token_field_name]
                 request.headers[self.header_name] = self.header_value.format(
                     token=token
                 )
