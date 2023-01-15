@@ -82,14 +82,6 @@ class BaseOauth2Auth(httpx.Auth):
     def server(self, server):
         self._server = server
 
-    def set_authorization_header(
-        self,
-        request: httpx.Request,
-        access_token: str,
-    ):
-        request.headers[self.header_name] = self.header_value.format(token=access_token)
-        return request
-
 
 class VimeoOAuth2ClientCredentials(BaseOauth2Auth):
     access_token_url = "https://api.vimeo.com/oauth/authorize/client"
@@ -99,32 +91,26 @@ class VimeoOAuth2ClientCredentials(BaseOauth2Auth):
     def sync_auth_flow(
         self, request: httpx.Request
     ) -> Generator[httpx.Request, httpx.Response, None]:
-        if self.access_token is not None:
-            yield self.set_authorization_header(request, self.access_token)
-        else:
-            response = yield self.build_access_token_request()
-            if response.is_success:
-                response.read()
-                token = response.json().get(self.token_field_name, None)
-                self.access_token = token
-                request = self.set_authorization_header(request, token)
+        response = yield self.build_access_token_request()
+        if response.is_success:
+            response.read()
+            token = response.json().get(self.token_field_name, None)
+            self.access_token = token
+            request.headers[self.header_name] = self.header_value.format(
+                token=self.access_token
+            )
         yield request
 
     async def async_auth_flow(
         self, request: Request
     ) -> typing.AsyncGenerator[Request, Response]:
-        if self.access_token is not None:
-            yield self.set_authorization_header(request, self.access_token)
-        else:
-            response = yield self.build_access_token_request()
-            if response.is_success:
-                await response.aread()
-                token = response.json().get(self.token_field_name, None)
-                self.access_token = token
-                request.headers[self.header_name] = self.header_value.format(
-                    token=token
-                )
-            yield request
+        response = yield self.build_access_token_request()
+        if response.is_success:
+            await response.aread()
+            token = response.json().get(self.token_field_name, None)
+            self.access_token = token
+            request.headers[self.header_name] = self.header_value.format(token=token)
+        yield request
 
     def build_access_token_request(self, *args, **kwargs):
         return super().build_access_token_request(
