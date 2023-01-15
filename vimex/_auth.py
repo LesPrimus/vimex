@@ -82,7 +82,11 @@ class BaseOauth2Auth(httpx.Auth):
     def server(self, server):
         self._server = server
 
-    def set_authorization_header(self, request, access_token):
+    def set_authorization_header(
+        self,
+        request: httpx.Request,
+        access_token: str,
+    ):
         request.headers[self.header_name] = self.header_value.format(token=access_token)
         return request
 
@@ -104,7 +108,7 @@ class VimeoOAuth2ClientCredentials(BaseOauth2Auth):
                 token = response.json().get(self.token_field_name, None)
                 self.access_token = token
                 request = self.set_authorization_header(request, token)
-            yield request
+        yield request
 
     async def async_auth_flow(
         self, request: Request
