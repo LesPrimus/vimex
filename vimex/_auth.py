@@ -62,6 +62,13 @@ class BaseOauth2Auth(httpx.Auth):
                 response.read()
                 return response.json().get(self.token_field_name, None)
 
+    async def async_request_token(self, request, *args, **kwargs):
+        async with httpx.AsyncClient() as client:
+            response = await client.send(request, *args, **kwargs)
+            if response.is_success:
+                await response.aread()
+                return response.json().get(self.token_field_name, None)
+
     def get_authorization_headers(self):
         encoded = _encode_client_credentials(self.client_id, self.client_secret)
         headers = {
@@ -103,12 +110,8 @@ class VimeoOAuth2ClientCredentials(BaseOauth2Auth):
 
     async def async_get_token(self):
         if self.access_token is None:
-            with httpx.AsyncClient() as client:
-                response = await client.send(self.build_access_token_request())
-                if response.is_success:
-                    await response.aread()
-                    token = response.json().get(self.token_field_name, None)
-                    self.access_token = token
+            token = await self.async_request_token(self.build_access_token_request())
+            self.access_token = token
         return self.access_token
 
     def sync_auth_flow(
