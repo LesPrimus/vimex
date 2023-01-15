@@ -55,6 +55,13 @@ class BaseOauth2Auth(httpx.Auth):
         )
         return r
 
+    def request_token(self, request, *args, **kwargs):
+        with httpx.Client() as client:
+            response = client.send(request, *args, **kwargs)
+            if response.is_success:
+                response.read()
+                return response.json().get(self.token_field_name, None)
+
     def get_authorization_headers(self):
         encoded = _encode_client_credentials(self.client_id, self.client_secret)
         headers = {
@@ -88,27 +95,35 @@ class VimeoOAuth2ClientCredentials(BaseOauth2Auth):
     default_scope = "public"
     grant_type = GrantType.CLIENT_CREDENTIALS
 
+    def sync_get_token(self):
+        if self.access_token is None:
+            token = self.request_token(self.build_access_token_request())
+            self.access_token = token
+        return self.access_token
+
+    async def async_get_token(self):
+        if self.access_token is None:
+            with httpx.AsyncClient() as client:
+                response = await client.send(self.build_access_token_request())
+                if response.is_success:
+                    await response.aread()
+                    token = response.json().get(self.token_field_name, None)
+                    self.access_token = token
+        return self.access_token
+
     def sync_auth_flow(
         self, request: httpx.Request
     ) -> Generator[httpx.Request, httpx.Response, None]:
-        response = yield self.build_access_token_request()
-        if response.is_success:
-            response.read()
-            token = response.json().get(self.token_field_name, None)
-            self.access_token = token
-            request.headers[self.header_name] = self.header_value.format(
-                token=self.access_token
-            )
+        token = self.sync_get_token()
+        if token:
+            request.headers[self.header_name] = self.header_value.format(token=token)
         yield request
 
     async def async_auth_flow(
         self, request: Request
     ) -> typing.AsyncGenerator[Request, Response]:
-        response = yield self.build_access_token_request()
-        if response.is_success:
-            await response.aread()
-            token = response.json().get(self.token_field_name, None)
-            self.access_token = token
+        token = await self.async_get_token()
+        if token:
             request.headers[self.header_name] = self.header_value.format(token=token)
         yield request
 
