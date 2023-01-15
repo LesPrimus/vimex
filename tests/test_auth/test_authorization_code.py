@@ -1,3 +1,5 @@
+from unittest import mock
+
 import httpx
 import pytest
 
@@ -12,7 +14,10 @@ API_ROOT = "https://some_website.com"
 
 
 class TestAuthorizationCodeAuth:
-    def test_code_flow_with_200(self):
+    @mock.patch("vimex.VimeoOauth2AuthorizationCode.request_token")
+    def test_code_flow_with_200(self, mocked_request_token):
+        mocked_request_token.return_value = "some_access_token"
+
         auth = vimex.VimeoOauth2AuthorizationCode(
             CLIENT_ID, CLIENT_SECRET, state="long___state"
         )
@@ -26,20 +31,12 @@ class TestAuthorizationCodeAuth:
         mocked_server.result.code = "some_code"
         request = next(flow)
 
-        assert request.headers["Authorization"].startswith("basic")
+        assert request.headers[auth.header_name] == auth.header_value.format(
+            token="some_access_token"
+        )
 
-        json_response = {
-            "access_token": "brand_new_token",
-            "token_type": "bearer",
-            "scope": "foo, bar",
-            "user": "some_user_representation"
-        }
-
-        response = httpx.Response(status_code=200, json=json_response)
-        request = flow.send(response)
-        assert request.headers['Authorization'] == f"Bearer {json_response['access_token']}"
-
-    def test_code_flow_with_400(self):
+    @mock.patch("vimex.VimeoOauth2AuthorizationCode.request_token")
+    def test_code_flow_without_code_in_response(self, mocked_request_token):
         auth = vimex.VimeoOauth2AuthorizationCode(
             client_id=CLIENT_ID,
             client_secret=CLIENT_SECRET,
@@ -56,8 +53,11 @@ class TestAuthorizationCodeAuth:
 
         request = next(flow)
         assert "Authorization" not in request.headers
+        mocked_request_token.assert_not_called()
 
-    def test_auth_flow_with_401_response(self):
+    @mock.patch("vimex.VimeoOauth2AuthorizationCode.request_token")
+    def test_auth_flow_with_401_response(self, mocked_request_token):
+        mocked_request_token.return_value = None
         auth = vimex.VimeoOauth2AuthorizationCode(
             client_id=CLIENT_ID, client_secret=CLIENT_SECRET, state=STATE
         )
@@ -70,16 +70,36 @@ class TestAuthorizationCodeAuth:
 
         mocked_server.result.code = "some_code"
         request = next(flow)
-        assert request.headers["Authorization"].startswith("basic")
+        assert "Authorization" not in request.headers
 
-        response = httpx.Response(status_code=401)
-        request = flow.send(response)
-        assert 'Authorization' not in request.headers
+    @mock.patch("vimex.VimeoOauth2AuthorizationCode.request_token")
+    def test_auth_flow_with_cached_access_token(self, mocked_request_token):
+        auth = vimex.VimeoOauth2AuthorizationCode(
+            client_id=CLIENT_ID,
+            client_secret=CLIENT_SECRET,
+            state=STATE,
+            access_token="some_cached_access_token",
+        )
+
+        mocked_server = MockedCallBackServer()
+        auth.server = mocked_server
+
+        request = httpx.Request("GET", API_ROOT)
+
+        flow = auth.sync_auth_flow(request)
+        request = next(flow)
+        assert request.headers[auth.header_name] == auth.header_value.format(
+            token=auth.access_token
+        )
+        mocked_request_token.assert_not_called()
 
 
 @pytest.mark.anyio
 class TestAsyncAuthorizationCodeAuth:
-    async def test_code_flow_with_200(self):
+    @mock.patch("vimex.VimeoOauth2AuthorizationCode.async_request_token")
+    async def test_code_flow_with_200(self, mocked_async_request_token):
+        mocked_async_request_token.return_value = "some_new_token"
+
         auth = vimex.VimeoOauth2AuthorizationCode(
             CLIENT_ID, CLIENT_SECRET, state="long___state"
         )
@@ -88,26 +108,17 @@ class TestAsyncAuthorizationCodeAuth:
         auth.server = mocked_server
         request = httpx.Request("GET", API_ROOT)
         flow = auth.async_auth_flow(request)
+        # code from vimeo.
         mocked_server.result.code = "some_code"
         request = await anext(flow)
-
-        assert request.headers["Authorization"].startswith("basic")
-
-        json_response = {
-            "access_token": "brand_new_token",
-            "token_type": "bearer",
-            "scope": "foo, bar",
-            "user": "some_user_representation",
-        }
-
-        response = httpx.Response(status_code=200, json=json_response)
-        request = await flow.asend(response)
-        assert (
-            request.headers["Authorization"]
-            == f"Bearer {json_response['access_token']}"
+        assert request.headers[auth.header_name] == auth.header_value.format(
+            token="some_new_token"
         )
 
-    async def test_code_flow_with_400(self):
+    @mock.patch("vimex.VimeoOauth2AuthorizationCode.async_request_token")
+    async def test_code_flow_with_400(self, mocked_async_request_token):
+        mocked_async_request_token.return_value = None
+
         auth = vimex.VimeoOauth2AuthorizationCode(
             client_id=CLIENT_ID,
             client_secret=CLIENT_SECRET,
@@ -120,12 +131,17 @@ class TestAsyncAuthorizationCodeAuth:
 
         flow = auth.async_auth_flow(request)
 
+        # No code from Vimeo
         server.result = ServerFlowResult()
 
         request = await anext(flow)
         assert "Authorization" not in request.headers
+        mocked_async_request_token.assert_not_called()
 
-    async def test_auth_flow_with_401_response(self):
+    @mock.patch("vimex.VimeoOauth2AuthorizationCode.async_request_token")
+    async def test_auth_flow_with_401_response(self, mocked_async_request):
+        mocked_async_request.return_value = None
+
         auth = vimex.VimeoOauth2AuthorizationCode(
             client_id=CLIENT_ID, client_secret=CLIENT_SECRET, state=STATE
         )
@@ -136,10 +152,8 @@ class TestAsyncAuthorizationCodeAuth:
 
         flow = auth.async_auth_flow(request)
 
+        # code from vimeo
         mocked_server.result.code = "some_code"
         request = await anext(flow)
-        assert request.headers["Authorization"].startswith("basic")
 
-        response = httpx.Response(status_code=401)
-        request = await flow.asend(response)
         assert "Authorization" not in request.headers

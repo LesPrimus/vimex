@@ -154,8 +154,8 @@ class VimeoOauth2AuthorizationCode(BaseOauth2Auth):
     exchange_url = "https://api.vimeo.com/oauth/access_token"
     grant_type = GrantType.AUTHORIZATION_CODE
 
-    def __init__(self, client_id, client_secret, state, scope=None):
-        super().__init__(client_id, client_secret, state, scope)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self._server = Server(
             port=self.server_port,
         )
@@ -163,37 +163,40 @@ class VimeoOauth2AuthorizationCode(BaseOauth2Auth):
     def sync_auth_flow(
         self, request: httpx.Request
     ) -> Generator[httpx.Request, httpx.Response, None]:
-        result = self._server.get_authorization_grant(self.format_authorization_url())
-        # self.check_state()
-        # todo add cache..
-        if code := result.code:
-            response = yield self.build_access_token_request(code)
-            if response.is_success:
-                response.read()  # todo investigate
-                data = response.json()
-                token = data[self.token_field_name]
-                request.headers[self.header_name] = self.header_value.format(
-                    token=token
-                )
+        token = self.sync_get_token()
+        if token:
+            request.headers[self.header_name] = self.header_value.format(token=token)
         yield request
+
+    def sync_get_token(self):
+        if self.access_token is None:
+            result = self._server.get_authorization_grant(
+                self.format_authorization_url()
+            )
+            if code := result.code:
+                token = self.request_token(self.build_access_token_request(code))
+                self.access_token = token
+        return self.access_token
 
     async def async_auth_flow(
         self, request: Request
     ) -> typing.AsyncGenerator[Request, Response]:
-        result = await self.server.async_get_authorization_grant(
-            self.format_authorization_url()
-        )
-        # self.check_state()
-        if code := result.code:
-            response = yield self.build_access_token_request(code)
-            if response.is_success:
-                await response.aread()
-                data = response.json()
-                token = data[self.token_field_name]
-                request.headers[self.header_name] = self.header_value.format(
-                    token=token
-                )
+        token = await self.async_get_token()
+        if token:
+            request.headers[self.header_name] = self.header_value.format(token=token)
         yield request
+
+    async def async_get_token(self):
+        if self.access_token is None:
+            result = await self.server.async_get_authorization_grant(
+                self.format_authorization_url()
+            )
+            if code := result.code:
+                token = await self.async_request_token(
+                    self.build_access_token_request(code)
+                )
+                self.access_token = token
+        return self.access_token
 
     def build_access_token_request(self, code, *args, **kwargs):
         return super().build_access_token_request(
