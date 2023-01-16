@@ -35,7 +35,7 @@ class BaseOauth2Auth(httpx.Auth):
         state: str,
         access_token: typing.Optional[str] = None,
         scope: typing.Optional[list[str]] = None,
-    ):
+    ) -> None:
         self.client_id = client_id
         self.client_secret = client_secret
         self.state = state
@@ -43,6 +43,28 @@ class BaseOauth2Auth(httpx.Auth):
         self.scope = (
             " ".join(scope) if scope and isinstance(scope, list) else self.default_scope
         )
+
+    def sync_auth_flow(
+        self, request: httpx.Request
+    ) -> Generator[httpx.Request, httpx.Response, None]:
+        token = self.sync_get_token()
+        if token:
+            request.headers[self.header_name] = self.header_value.format(token=token)
+        yield request
+
+    async def async_auth_flow(
+        self, request: Request
+    ) -> typing.AsyncGenerator[Request, Response]:
+        token = await self.async_get_token()
+        if token:
+            request.headers[self.header_name] = self.header_value.format(token=token)
+        yield request
+
+    def sync_get_token(self):
+        raise NotImplementedError
+
+    async def async_get_token(self):
+        raise NotImplementedError
 
     def build_access_token_request(
         self, method: str, url: str, headers: dict, body: dict, **kwargs
@@ -128,22 +150,6 @@ class VimeoOAuth2ClientCredentials(BaseOauth2Auth):
                 self.access_token = token
         return self.access_token
 
-    def sync_auth_flow(
-        self, request: httpx.Request
-    ) -> Generator[httpx.Request, httpx.Response, None]:
-        token = self.sync_get_token()
-        if token:
-            request.headers[self.header_name] = self.header_value.format(token=token)
-        yield request
-
-    async def async_auth_flow(
-        self, request: Request
-    ) -> typing.AsyncGenerator[Request, Response]:
-        token = await self.async_get_token()
-        if token:
-            request.headers[self.header_name] = self.header_value.format(token=token)
-        yield request
-
     def build_access_token_request(self, *args, **kwargs):
         return super().build_access_token_request(
             method="POST",
@@ -174,14 +180,6 @@ class VimeoOauth2AuthorizationCode(BaseOauth2Auth):
             port=self.server_port,
         )
 
-    def sync_auth_flow(
-        self, request: httpx.Request
-    ) -> Generator[httpx.Request, httpx.Response, None]:
-        token = self.sync_get_token()
-        if token:
-            request.headers[self.header_name] = self.header_value.format(token=token)
-        yield request
-
     def sync_get_token(self):
         if self.access_token is None:
             result = self._server.get_authorization_grant(
@@ -194,14 +192,6 @@ class VimeoOauth2AuthorizationCode(BaseOauth2Auth):
                     token = response.json().get(self.token_field_name, None)
                     self.access_token = token
         return self.access_token
-
-    async def async_auth_flow(
-        self, request: Request
-    ) -> typing.AsyncGenerator[Request, Response]:
-        token = await self.async_get_token()
-        if token:
-            request.headers[self.header_name] = self.header_value.format(token=token)
-        yield request
 
     async def async_get_token(self):
         if self.access_token is None:
@@ -255,14 +245,6 @@ class VimeoOauth2ImplicitGrant(BaseOauth2Auth):
         super().__init__(*args, **kwargs)
         self._server = Server(port=self.server_port, redirect_on_fragment=True)
 
-    def sync_auth_flow(
-        self, request: httpx.Request
-    ) -> Generator[httpx.Request, httpx.Response, None]:
-        token = self.sync_get_token()
-        if token:
-            request.headers[self.header_name] = self.header_value.format(token=token)
-        yield request
-
     def sync_get_token(self):
         if self.access_token is None:
             result = self._server.get_authorization_grant(
@@ -271,14 +253,6 @@ class VimeoOauth2ImplicitGrant(BaseOauth2Auth):
             if access_token := result.access_token:
                 self.access_token = access_token
         return self.access_token
-
-    async def async_auth_flow(
-        self, request: Request
-    ) -> typing.AsyncGenerator[Request, Response]:
-        token = await self.async_get_token()
-        if token:
-            request.headers[self.header_name] = self.header_value.format(token=token)
-        yield request
 
     async def async_get_token(self):
         if self.access_token is None:
@@ -307,14 +281,6 @@ class VimeoOauth2DeviceCodeGrant(BaseOauth2Auth):
         super().__init__(*args, **kwargs)
         self._server = Server(port=self.server_port)
 
-    def sync_auth_flow(
-        self, request: httpx.Request
-    ) -> Generator[httpx.Request, httpx.Response, None]:
-        token = self.sync_get_token()
-        if token:
-            request.headers[self.header_name] = self.header_value.format(token=token)
-        yield request
-
     def sync_get_token(self):
         if self.access_token is None:
             response = self.send_request(self.build_access_token_request())
@@ -336,14 +302,6 @@ class VimeoOauth2DeviceCodeGrant(BaseOauth2Auth):
                     token = response.json().get(self.token_field_name, None)
                     self.access_token = token
         return self.access_token
-
-    async def async_auth_flow(
-        self, request: Request
-    ) -> typing.AsyncGenerator[Request, Response]:
-        token = await self.async_get_token()
-        if token:
-            request.headers[self.header_name] = self.header_value.format(token=token)
-        yield request
 
     async def async_get_token(self):
         if self.access_token is None:
