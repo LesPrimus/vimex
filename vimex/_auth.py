@@ -231,31 +231,43 @@ class VimeoOauth2ImplicitGrant(BaseOauth2Auth):
                         "&scope={scope}"
     grant_type = GrantType.IMPLICIT
 
-    def __init__(self, client_id, client_secret, state, scope=None):
-        super().__init__(client_id, client_secret, state, scope)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self._server = Server(port=self.server_port, redirect_on_fragment=True)
 
     def sync_auth_flow(
-            self, request: Request
+        self, request: httpx.Request
     ) -> Generator[httpx.Request, httpx.Response, None]:
-        result = self._server.get_authorization_grant(self.format_authorization_url())
-        if access_token := result.access_token:
-            request.headers[self.header_name] = self.header_value.format(
-                token=access_token
-            )
+        token = self.sync_get_token()
+        if token:
+            request.headers[self.header_name] = self.header_value.format(token=token)
         yield request
+
+    def sync_get_token(self):
+        if self.access_token is None:
+            result = self._server.get_authorization_grant(
+                self.format_authorization_url()
+            )
+            if access_token := result.access_token:
+                self.access_token = access_token
+        return self.access_token
 
     async def async_auth_flow(
         self, request: Request
     ) -> typing.AsyncGenerator[Request, Response]:
-        result = await self._server.async_get_authorization_grant(
-            self.format_authorization_url()
-        )
-        if access_token := result.access_token:
-            request.headers[self.header_name] = self.header_value.format(
-                token=access_token
-            )
+        token = await self.async_get_token()
+        if token:
+            request.headers[self.header_name] = self.header_value.format(token=token)
         yield request
+
+    async def async_get_token(self):
+        if self.access_token is None:
+            result = await self.server.async_get_authorization_grant(
+                self.format_authorization_url()
+            )
+            if access_token := result.access_token:
+                self.access_token = access_token
+        return self.access_token
 
     def format_authorization_url(self) -> str:
         return self.authorization_url.format(
