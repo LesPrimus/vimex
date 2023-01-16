@@ -55,19 +55,27 @@ class BaseOauth2Auth(httpx.Auth):
         )
         return r
 
-    def request_token(self, request, *args, **kwargs):
-        with httpx.Client() as client:
-            response = client.send(request, *args, **kwargs)
-            if response.is_success:
-                response.read()
-                return response.json().get(self.token_field_name, None)
+    @staticmethod
+    def send_request(request, *args, **kwargs):
+        _client, _auto_created = kwargs.pop("client", None), False
+        if _client is None:
+            _client, _auto_created = httpx.Client(), True
+        try:
+            return _client.send(request, *args, **kwargs)
+        finally:
+            if _auto_created:
+                _client.close()
 
-    async def async_request_token(self, request, *args, **kwargs):
-        async with httpx.AsyncClient() as client:
-            response = await client.send(request, *args, **kwargs)
-            if response.is_success:
-                await response.aread()
-                return response.json().get(self.token_field_name, None)
+    @staticmethod
+    async def async_send_request(request, *args, **kwargs):
+        _client, _auto_created = kwargs.pop("client", None), False
+        if _client is None:
+            _client, _auto_created = httpx.AsyncClient(), True
+        try:
+            return await _client.send(request, *args, **kwargs)
+        finally:
+            if _auto_created:
+                await _client.aclose()
 
     def get_authorization_headers(self):
         encoded = _encode_client_credentials(self.client_id, self.client_secret)
@@ -104,14 +112,20 @@ class VimeoOAuth2ClientCredentials(BaseOauth2Auth):
 
     def sync_get_token(self):
         if self.access_token is None:
-            token = self.request_token(self.build_access_token_request())
-            self.access_token = token
+            response = self.send_request(self.build_access_token_request())
+            if response.is_success:
+                response.read()
+                token = response.json().get(self.token_field_name, None)
+                self.access_token = token
         return self.access_token
 
     async def async_get_token(self):
         if self.access_token is None:
-            token = await self.async_request_token(self.build_access_token_request())
-            self.access_token = token
+            response = await self.async_send_request(self.build_access_token_request())
+            if response.is_success:
+                await response.aread()
+                token = response.json().get(self.token_field_name, None)
+                self.access_token = token
         return self.access_token
 
     def sync_auth_flow(
@@ -174,8 +188,11 @@ class VimeoOauth2AuthorizationCode(BaseOauth2Auth):
                 self.format_authorization_url()
             )
             if code := result.code:
-                token = self.request_token(self.build_access_token_request(code))
-                self.access_token = token
+                response = self.send_request(self.build_access_token_request(code))
+                if response.is_success:
+                    response.read()
+                    token = response.json().get(self.token_field_name, None)
+                    self.access_token = token
         return self.access_token
 
     async def async_auth_flow(
@@ -192,10 +209,13 @@ class VimeoOauth2AuthorizationCode(BaseOauth2Auth):
                 self.format_authorization_url()
             )
             if code := result.code:
-                token = await self.async_request_token(
+                response = await self.async_send_request(
                     self.build_access_token_request(code)
                 )
-                self.access_token = token
+                if response.is_success:
+                    await response.aread()
+                    token = response.json().get(self.token_field_name, None)
+                    self.access_token = token
         return self.access_token
 
     def build_access_token_request(self, code, *args, **kwargs):
@@ -283,62 +303,70 @@ class VimeoOauth2DeviceCodeGrant(BaseOauth2Auth):
     access_token_url = "https://api.vimeo.com/oauth/device"
     grant_type = GrantType.DEVICE
 
-    def __init__(self, client_id, client_secret, state, scope=None):
-        super().__init__(client_id, client_secret, state, scope)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self._server = Server(port=self.server_port)
 
     def sync_auth_flow(
-            self, request: Request
+        self, request: httpx.Request
     ) -> Generator[httpx.Request, httpx.Response, None]:
-        response = yield self.build_access_token_request()
-        if response.is_success:
-            response.read()
-            payload = DeviceCodeGrantResponse(**response.json())
-            self.print_instructions(payload.activate_link, payload.user_code)
-            response = self._server.poll_authorize_url(
-                url=payload.authorize_link,
-                expires_in=payload.expires_in,
-                interval=payload.interval,
-                headers=self.get_authorization_headers(),
-                data={
-                    "user_code": payload.user_code,
-                    "device_code": payload.device_code,
-                },
-            )
-            if response.is_success:
-                token = response.json().get(self.token_field_name, None)
-                if token:
-                    request.headers[self.header_name] = self.header_value.format(
-                        token=token
-                    )
+        token = self.sync_get_token()
+        if token:
+            request.headers[self.header_name] = self.header_value.format(token=token)
         yield request
+
+    def sync_get_token(self):
+        if self.access_token is None:
+            response = self.send_request(self.build_access_token_request())
+            if response.is_success:
+                response.read()
+                payload = DeviceCodeGrantResponse(**response.json())
+                self.print_instructions(payload.activate_link, payload.user_code)
+                response = self._server.poll_authorize_url(
+                    url=payload.authorize_link,
+                    expires_in=payload.expires_in,
+                    interval=payload.interval,
+                    headers=self.get_authorization_headers(),
+                    data={
+                        "user_code": payload.user_code,
+                        "device_code": payload.device_code,
+                    },
+                )
+                if response.is_success:
+                    token = response.json().get(self.token_field_name, None)
+                    self.access_token = token
+        return self.access_token
 
     async def async_auth_flow(
         self, request: Request
     ) -> typing.AsyncGenerator[Request, Response]:
-        response = yield self.build_access_token_request()
-        if response.is_success:
-            await response.aread()
-            payload = DeviceCodeGrantResponse(**response.json())
-            self.print_instructions(payload.activate_link, payload.user_code)
-
-            response = await self._server.async_poll_authorize_url(
-                url=payload.authorize_link,
-                expires_in=payload.expires_in,
-                interval=payload.interval,
-                headers=self.get_authorization_headers(),
-                data={
-                    "user_code": payload.user_code,
-                    "device_code": payload.device_code,
-                },
-            )
-            if response.is_success:
-                token = response.json().get(self.token_field_name, None)
-                if token:
-                    request.headers[self.header_name] = self.header_value.format(
-                        token=token
-                    )
+        token = await self.async_get_token()
+        if token:
+            request.headers[self.header_name] = self.header_value.format(token=token)
         yield request
+
+    async def async_get_token(self):
+        if self.access_token is None:
+            response = await self.async_send_request(self.build_access_token_request())
+            if response.is_success:
+                await response.aread()
+                payload = DeviceCodeGrantResponse(**response.json())
+                self.print_instructions(payload.activate_link, payload.user_code)
+
+                response = await self._server.async_poll_authorize_url(
+                    url=payload.authorize_link,
+                    expires_in=payload.expires_in,
+                    interval=payload.interval,
+                    headers=self.get_authorization_headers(),
+                    data={
+                        "user_code": payload.user_code,
+                        "device_code": payload.device_code,
+                    },
+                )
+                if response.is_success:
+                    token = response.json().get(self.token_field_name, None)
+                    self.access_token = token
+        return self.access_token
 
     def build_access_token_request(self, *args, **kwargs):
         return super().build_access_token_request(
