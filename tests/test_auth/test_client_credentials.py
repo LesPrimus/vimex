@@ -12,9 +12,11 @@ API_ROOT = "https://some_website.com"
 
 
 class TestClientCredentialsAuth:
-    @mock.patch("vimex.VimeoOAuth2ClientCredentials.request_token")
-    def test_client_credentials_flow_with_200(self, mocked_request_token):
-        mocked_request_token.return_value = "some_access_token"
+    @mock.patch("vimex.VimeoOAuth2ClientCredentials.send_request")
+    def test_client_credentials_flow_with_200(self, mocked_send_request):
+        mocked_send_request.return_value = httpx.Response(
+            200, json={"access_token": "some_access_token"}
+        )
         auth = vimex.VimeoOAuth2ClientCredentials(
             client_id=CLIENT_ID, client_secret=CLIENT_SECRET, state=STATE
         )
@@ -28,9 +30,9 @@ class TestClientCredentialsAuth:
             token="some_access_token"
         )
 
-    @mock.patch("vimex.VimeoOAuth2ClientCredentials.request_token")
-    def test_client_credentials_flow_with_400(self, mocked_request_token):
-        mocked_request_token.return_value = None
+    @mock.patch("vimex.VimeoOAuth2ClientCredentials.send_request")
+    def test_client_credentials_flow_with_400(self, mocked_send_request):
+        mocked_send_request.return_value = httpx.Response(400)
         auth = vimex.VimeoOAuth2ClientCredentials(
             client_id=CLIENT_ID, client_secret=CLIENT_SECRET, state=STATE
         )
@@ -39,9 +41,9 @@ class TestClientCredentialsAuth:
         request = next(flow)
         assert "Authorization" not in request.headers
 
-    @mock.patch("vimex.VimeoOAuth2ClientCredentials.request_token")
+    @mock.patch("vimex.VimeoOAuth2ClientCredentials.send_request")
     def test_client_credentials_flow_with_cached_access_token(
-        self, mocked_request_token
+        self, mocked_send_request
     ):
         auth = vimex.VimeoOAuth2ClientCredentials(
             client_id=CLIENT_ID,
@@ -55,16 +57,18 @@ class TestClientCredentialsAuth:
         assert request.headers["Authorization"] == auth.header_value.format(
             token=auth.access_token
         )
-        mocked_request_token.assert_not_called()
+        mocked_send_request.assert_not_called()
 
 
 @pytest.mark.anyio
 class TestAsyncClientCredentialsAuth:
-    @mock.patch("vimex.VimeoOAuth2ClientCredentials.async_request_token")
+    @mock.patch("vimex.VimeoOAuth2ClientCredentials.async_send_request")
     async def test_async_client_credentials_flow_with_200(
-        self, mocked_async_request_token
+        self, mocked_async_send_request
     ):
-        mocked_async_request_token.return_value = "some_access_token"
+        mocked_async_send_request.return_value = httpx.Response(
+            200, json={"access_token": "some_access_token"}
+        )
         auth = vimex.VimeoOAuth2ClientCredentials(
             client_id=CLIENT_ID, client_secret=CLIENT_SECRET, state=STATE
         )
@@ -76,9 +80,9 @@ class TestAsyncClientCredentialsAuth:
             token="some_access_token"
         )
 
-    @mock.patch("vimex.VimeoOAuth2ClientCredentials.async_request_token")
-    async def test_client_credentials_flow_with_400(self, mocked_async_request_token):
-        mocked_async_request_token.return_value = None
+    @mock.patch("vimex.VimeoOAuth2ClientCredentials.async_send_request")
+    async def test_client_credentials_flow_with_400(self, mocked_async_send_request):
+        mocked_async_send_request.return_value = httpx.Response(400)
         auth = vimex.VimeoOAuth2ClientCredentials(
             client_id=CLIENT_ID, client_secret=CLIENT_SECRET, state=STATE
         )
@@ -87,9 +91,9 @@ class TestAsyncClientCredentialsAuth:
         request = await anext(flow)
         assert "Authorization" not in request.headers
 
-    @mock.patch("vimex.VimeoOAuth2ClientCredentials.async_request_token")
+    @mock.patch("vimex.VimeoOAuth2ClientCredentials.async_send_request")
     async def test_client_credentials_flow_with_cached_access_token(
-        self, mocked_async_request_token
+        self, mocked_async_send_request
     ):
         auth = vimex.VimeoOAuth2ClientCredentials(
             client_id=CLIENT_ID,
@@ -103,4 +107,4 @@ class TestAsyncClientCredentialsAuth:
         assert request.headers["Authorization"] == auth.header_value.format(
             token=auth.access_token
         )
-        mocked_async_request_token.assert_not_called()
+        mocked_async_send_request.assert_not_called()

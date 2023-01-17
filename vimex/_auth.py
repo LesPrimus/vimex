@@ -299,6 +299,7 @@ class VimeoOauth2DeviceCodeGrant(BaseOauth2Auth):
                     },
                 )
                 if response.is_success:
+                    response.read()
                     token = response.json().get(self.token_field_name, None)
                     self.access_token = token
         return self.access_token
