@@ -1,9 +1,11 @@
 import httpx
 
+from ._upload import SyncUploadMixin, AsyncUploadMixin
 
-class VimeoClient(httpx.Client):
+
+class VimeoClient(SyncUploadMixin, httpx.Client):
     pass
 
 
-class AsyncVimeoClient(httpx.AsyncClient):
+class AsyncVimeoClient(AsyncUploadMixin, httpx.AsyncClient):
     pass

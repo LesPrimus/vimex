@@ -8,3 +8,11 @@ class AuthorizationCodeException(Exception):
 
 class AuthorizationStateException(Exception):
     pass
+
+
+class UploadException(Exception):
+    pass
+
+
+class TusUploadException(UploadException):
+    pass

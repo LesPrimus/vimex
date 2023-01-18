@@ -24,3 +24,7 @@ class ServerFlowResult:
     code: str = None
     received_state: str = None
     access_token: str = None
+
+
+class TusUploadResponse(NamedTuple):
+    pass

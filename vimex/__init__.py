@@ -12,6 +12,14 @@ from ._exceptions import (
     ClientCredentialsException,
     AuthorizationCodeException,
     AuthorizationStateException,
+    UploadException,
+    TusUploadException,
+)
+
+from ._upload import (
+    BaseUpload,
+    SyncUploadMixin,
+    AsyncUploadMixin,
 )
 
 from ._data_structures import DeviceCodeGrantResponse
@@ -27,4 +35,8 @@ __all__ = [
     "AuthorizationCodeException",
     "AuthorizationStateException",
     "DeviceCodeGrantResponse",
+    "UploadException",
+    "TusUploadException",
+    "AsyncUploadMixin",
+    "SyncUploadMixin",
 ]
