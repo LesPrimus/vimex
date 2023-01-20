@@ -1,12 +1,14 @@
 import os
 from typing import Optional, IO
 
+import httpx
 from tusclient.uploader import Uploader as TusPyUploader
+from tusclient.uploader import AsyncUploader as AsyncTusPyUploader
 from tusclient.uploader.baseuploader import BaseUploader as TusPyBaseUploader
 
-from rich.progress import Progress
-
 import vimex
+
+from ._utils import get_attribute
 
 
 class BaseUpload:
@@ -29,53 +31,75 @@ class BaseUpload:
         response = self.post(self.upload_url, json=body, **kwargs)
         return response
 
+    async def async_create_upload_link(self, size, approach, **kwargs):
+        body = self.get_post_upload_body(size, approach)
+        response = await self.post(self.upload_url, json=body, **kwargs)
+        return response
+
+    @staticmethod
+    def get_value_from_response(response: httpx.Response, *args) -> str:
+        if not response.is_success:
+            raise vimex.TusUploadException(response.json())
+        return get_attribute(response.json(), *args)
+
+    @staticmethod
+    def init_uploader(uploader_cls, *args, **kwargs):
+        return uploader_cls(*args, **kwargs)
+
 
 class SyncUploadMixin(BaseUpload):
     def tus_upload(
         self,
         file_path: Optional[str] = None,
         file_stream: Optional[IO] = None,
-        uploader_class: Optional[TusPyBaseUploader] = None,
+        uploader_class: Optional[TusPyBaseUploader] = TusPyUploader,
         uploader_config: Optional[dict] = None,
         **kwargs,
     ):
         assert file_path or file_stream
 
-        uploader_class = uploader_class or TusPyUploader
-
-        uploader_config = uploader_config or {}
-        uploader_config.pop("file_path", None)
-        uploader_config.pop("file_stream", None)
-
         size = self.get_file_size(file_path or file_stream)
 
         response = self.create_upload_link(size, approach="tus", **kwargs)
+        upload_link = self.get_value_from_response(response, "upload", "upload_link")
+        uri = self.get_value_from_response(response, "uri")
 
-        if not response.is_success:
-            raise vimex.TusUploadException(response.json())
-        try:
-            upload_link = response.json()["upload"]["upload_link"]
-        except KeyError:
-            raise vimex.TusUploadException("no upload link provided from vimeo.")
-
-        try:
-            uri = response.json()["uri"]
-        except KeyError:
-            raise vimex.TusUploadException("no uri link provided from vimeo")
-
-        uploader = uploader_class(
+        uploader = self.init_uploader(
+            uploader_class,
             file_path=file_path,
             file_stream=file_stream,
             url=upload_link,
-            **uploader_config,
+            **uploader_config or {},
         )
-        with Progress() as progress:
-            task = progress.add_task("[green]Uploading...", total=uploader.stop_at)
-            while not progress.finished:
-                progress.update(task, advance=uploader.offset)
-                uploader.upload_chunk()
+        while uploader.offset < uploader.stop_at:
+            uploader.upload_chunk()
         return uri
 
 
 class AsyncUploadMixin(BaseUpload):
-    pass
+    async def tus_upload(
+        self,
+        file_path: Optional[str] = None,
+        file_stream: Optional[IO] = None,
+        uploader_class: Optional[TusPyBaseUploader] = AsyncTusPyUploader,
+        uploader_config: Optional[dict] = None,
+        **kwargs,
+    ):
+        assert file_path or file_stream
+
+        size = self.get_file_size(file_path or file_stream)
+
+        response = await self.async_create_upload_link(size, approach="tus", **kwargs)
+        upload_link = self.get_value_from_response(response, "upload", "upload_link")
+        uri = self.get_value_from_response(response, "uri")
+
+        uploader = self.init_uploader(
+            uploader_class,
+            file_path=file_path,
+            file_stream=file_stream,
+            url=upload_link,
+            **uploader_config or {},
+        )
+        while uploader.offset < uploader.stop_at:
+            await uploader.upload_chunk()
+        return uri
