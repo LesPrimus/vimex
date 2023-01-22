@@ -1,15 +1,11 @@
 import os
 import sys
 from functools import cached_property
-from typing import Optional, IO, Type, Union
+from typing import IO, Union
 
 import httpx
-from tusclient.uploader import Uploader as TusPyUploader
-from tusclient.uploader import AsyncUploader as AsyncTusPyUploader
-from tusclient.uploader.baseuploader import BaseUploader as TusPyBaseUploader
 
 import vimex
-
 from ._utils import get_attribute, get_file_stream, get_file_size
 
 
@@ -91,7 +87,7 @@ class TusUploader:
 
     def chunks_upload(self):
         while self.upload_offset < self.file_length:
-            chunk = self.file.read(self.chunk_size)
+            chunk = self.file.read(self.get_content_length())
             response = self.client.patch(
                 self.upload_link,
                 headers=self.set_headers(content_length=str(self.get_content_length())),
