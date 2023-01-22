@@ -12,7 +12,3 @@ class AuthorizationStateException(Exception):
 
 class UploadException(Exception):
     pass
-
-
-class TusUploadException(UploadException):
-    pass

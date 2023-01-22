@@ -13,7 +13,6 @@ from ._exceptions import (
     AuthorizationCodeException,
     AuthorizationStateException,
     UploadException,
-    TusUploadException,
 )
 
 from ._upload import (
@@ -22,7 +21,7 @@ from ._upload import (
     AsyncUploadMixin,
 )
 
-from ._data_structures import DeviceCodeGrantResponse
+from ._data_structures import DeviceCodeGrantResponse, UploadApproach
 
 __all__ = [
     "VimeoClient",
@@ -35,8 +34,8 @@ __all__ = [
     "AuthorizationCodeException",
     "AuthorizationStateException",
     "DeviceCodeGrantResponse",
+    "UploadApproach",
     "UploadException",
-    "TusUploadException",
     "AsyncUploadMixin",
     "SyncUploadMixin",
 ]
