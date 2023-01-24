@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from enum import Enum, auto
+from enum import Enum
 from typing import NamedTuple
 
 
@@ -24,7 +24,3 @@ class ServerFlowResult:
     code: str = None
     received_state: str = None
     access_token: str = None
-
-
-class UploadApproach:
-    TUS = "tus"

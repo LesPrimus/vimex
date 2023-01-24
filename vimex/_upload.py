@@ -1,7 +1,7 @@
 import os
 import sys
 from functools import cached_property
-from typing import IO, Union
+from typing import IO, Union, Optional
 
 import httpx
 
@@ -13,8 +13,11 @@ class BaseUpload:
     upload_url = "https://api.vimeo.com/me/videos"
 
     @staticmethod
-    def get_post_upload_body(file_size, approach):
-        body = {"upload": {"approach": str(approach), "size": str(file_size)}}
+    def get_post_upload_body(file_size, approach, **metadata):
+        body = {
+            "upload": {"approach": str(approach), "size": str(file_size)},
+            **metadata,
+        }
         return body
 
     @staticmethod
@@ -32,21 +35,36 @@ class BaseUpload:
 
 
 class SyncUploadMixin(BaseUpload):
-    def create_video(self, file: Union[str, IO], approach, **kwargs):
+    def create_tus_video(
+        self,
+        file: Union[str, IO],
+        name: Optional[str] = None,
+        description: Optional[str] = None,
+        privacy: Optional[dict] = None,
+        **request_kwargs
+    ):
+        name = name or os.path.basename(file)
+        description = description or ""
+        privacy = privacy or {}
+
         size = get_file_size(file)
-        body = self.get_post_upload_body(size, approach)
-        response = self.post(self.upload_url, json=body, **kwargs)
+        body = self.get_post_upload_body(
+            size, "tus", name=name, description=description, privacy=privacy
+        )
+
+        response = self.post(self.upload_url, json=body, **request_kwargs)
+
         upload_link = self.get_value_from_response(response, "upload", "upload_link")
         uri = self.get_value_from_response(response, "uri")
+
         return upload_link, uri
 
-    def perform_upload(self, file, upload_link, uploader=None):
-        uploader = uploader or TusUploader(file, upload_link, client=self)
-        return uploader.upload()
+    def get_tus_uploader(self, file, upload_link, chunk_size: Optional[int] = None):
+        return TusUploader(file, upload_link, self, chunk_size=chunk_size)
 
-    def tus_upload(self, file, uploader=None):
-        upload_link, uri = self.create_video(file, "tus")
-        return self.perform_upload(file, upload_link, uploader)
+    # def tus_upload(self, file, uploader=None):
+    #     upload_link, uri = self.create_video(file, "tus")
+    #     return self.perform_upload(file, upload_link, uploader)
 
 
 class AsyncUploadMixin(BaseUpload):
@@ -54,9 +72,11 @@ class AsyncUploadMixin(BaseUpload):
 
 
 class TusUploader:
-    def __init__(self, file, upload_link: str, client, chunk_size=sys.maxsize):
+    DEFAULT_CHUNK_SIZE = sys.maxsize
+
+    def __init__(self, file, upload_link: str, client, chunk_size=None):
         self._file = file
-        self.chunk_size = chunk_size
+        self.chunk_size = chunk_size or self.DEFAULT_CHUNK_SIZE
         self.upload_link = upload_link
         self.client = client
         self.upload_offset = 0
@@ -94,4 +114,13 @@ class TusUploader:
                 data=chunk,
             )
             self.upload_offset = int(response.headers["upload-offset"])
-            yield self.upload_offset, self.file_length
+            yield response
+
+    def upload(self):
+        response = self.client.patch(
+            self.upload_link,
+            headers=self.set_headers(content_length=str(self.get_content_length())),
+            data=self.file,
+        )
+        self.upload_offset = int(response.headers["upload-offset"])
+        return response
