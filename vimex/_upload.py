@@ -62,10 +62,6 @@ class SyncUploadMixin(BaseUpload):
     def get_tus_uploader(self, file, upload_link, chunk_size: Optional[int] = None):
         return TusUploader(file, upload_link, self, chunk_size=chunk_size)
 
-    # def tus_upload(self, file, uploader=None):
-    #     upload_link, uri = self.create_video(file, "tus")
-    #     return self.perform_upload(file, upload_link, uploader)
-
 
 class AsyncUploadMixin(BaseUpload):
     pass
@@ -76,7 +72,7 @@ class TusUploader:
 
     def __init__(self, file, upload_link: str, client, chunk_size=None):
         self._file = file
-        self.chunk_size = chunk_size or self.DEFAULT_CHUNK_SIZE
+        self.chunk_size = chunk_size
         self.upload_link = upload_link
         self.client = client
         self.upload_offset = 0
@@ -88,6 +84,16 @@ class TusUploader:
     @cached_property
     def file_length(self):
         return get_file_size(self.file)
+
+    @property
+    def chunk_size(self):
+        return self._chunk_size
+
+    @chunk_size.setter
+    def chunk_size(self, value):
+        if not value or value < 1:
+            value = self.DEFAULT_CHUNK_SIZE
+        self._chunk_size = value
 
     def set_headers(self, **kwargs):
         content_length = kwargs.pop("content_length", None)
@@ -105,7 +111,8 @@ class TusUploader:
         remain = self.file_length - self.upload_offset
         return self.chunk_size if remain > self.chunk_size else remain
 
-    def chunks_upload(self):
+    def chunks_upload(self, chunk_size):
+        self.chunk_size = chunk_size
         while self.upload_offset < self.file_length:
             chunk = self.file.read(self.get_content_length())
             response = self.client.patch(
